@@ -294,6 +294,14 @@ typedef enum {
     MMC_F_MODEM_LIST_DBUS_PATH,
     MMC_F_SMS_LIST_DBUS_PATH,
     MMC_F_CALL_LIST_DBUS_PATH,
+    /* Temperature */
+    // MMC_F_MODEM_TEMPERATURE_RESPONSE,
+    // MMC_F_MODEM_TEMPERATURE_SENSOR_1,
+    // MMC_F_MODEM_TEMPERATURE_SENSOR_2,
+    // MMC_F_MODEM_TEMPERATURE_SENSOR_3,
+    MMC_F_MODEM_TEMPERATURE_PMIC,
+    MMC_F_MODEM_TEMPERATURE_XO,
+    MMC_F_MODEM_TEMPERATURE_PA,
 } MmcF;
 
 /******************************************************************************/

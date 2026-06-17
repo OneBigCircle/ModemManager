@@ -34,6 +34,8 @@
 #include "mmcli-common.h"
 #include "mmcli-output.h"
 
++#define QUECTEL_TEMP_COMMAND "AT+QTEMP"
+
 /* Context */
 typedef struct {
     GDBusConnection *connection;
@@ -65,6 +67,7 @@ static gchar *set_preferred_mode_str;
 static gchar *set_current_bands_str;
 static gint set_primary_sim_slot_int;
 static gboolean inhibit_flag;
+static gboolean temperature_flag;
 
 static GOptionEntry entries[] = {
     { "monitor-state", 'w', 0, G_OPTION_ARG_NONE, &monitor_state_flag,
@@ -135,6 +138,10 @@ static GOptionEntry entries[] = {
       "Inhibit the modem",
       NULL
     },
+    { "temperature", 0, 0, G_OPTION_ARG_NONE, &temperature_flag,
+      "Get the modem temperature, currently supported for Quectel modems only",
+      NULL
+    },
     { NULL }
 };
 
@@ -179,7 +186,8 @@ mmcli_modem_options_enabled (void)
                  !!set_preferred_mode_str +
                  !!set_current_bands_str +
                  (set_primary_sim_slot_int > 0) +
-                 inhibit_flag);
+                 inhibit_flag +
+                 temperature_flag);
 
     if (n_actions == 0 && mmcli_get_common_modem_string ()) {
         /* default to info */
@@ -211,6 +219,13 @@ mmcli_modem_options_enabled (void)
 }
 
 static void
+setup_temperature_command (void)
+{
+    if (temperature_flag && !command_str)
+        command_str = g_strdup (QUECTEL_TEMP_COMMAND);
+}
+
+static void
 context_free (void)
 {
     if (!ctx)
@@ -231,6 +246,58 @@ context_free (void)
     if (ctx->connection)
         g_object_unref (ctx->connection);
     g_free (ctx);
+}
+
+static void
+temperature_process_reply (gchar *result,
+                           const GError *error)
+{
+    gchar **items;
+    gchar *payload;
+    gint t1, t2, t3;
+
+    if (!result) {
+        g_printerr ("error: temperature query failed: '%s'\n",
+                    error ? error->message : "unknown error");
+        exit (EXIT_FAILURE);
+    }
+
+    if (!g_str_has_prefix (result, "+QTEMP:")) {
+        g_printerr ("error: unexpected temperature response: '%s'\n", result);
+        g_free (result);
+        exit (EXIT_FAILURE);
+    }
+
+    payload = g_strdup (result + strlen ("+QTEMP:"));
+    g_strstrip (payload);
+
+    items = g_strsplit (payload, ",", 3);
+
+    if (!items[0] || !items[1] || !items[2]) {
+        g_printerr ("error: failed to parse temperature response: '%s'\n", result);
+        g_strfreev (items);
+        g_free (payload);
+        g_free (result);
+        exit (EXIT_FAILURE);
+    }
+
+    t1 = atoi (g_strstrip (items[0]));
+    t2 = atoi (g_strstrip (items[1]));
+    t3 = atoi (g_strstrip (items[2]));
+
+    mmcli_output_string (MMC_F_MODEM_TEMPERATURE_RESPONSE, result);
+    mmcli_output_string_take (MMC_F_MODEM_TEMPERATURE_SENSOR_1,
+                              g_strdup_printf ("%d", t1));
+    mmcli_output_string_take (MMC_F_MODEM_TEMPERATURE_SENSOR_2,
+                              g_strdup_printf ("%d", t2));
+    mmcli_output_string_take (MMC_F_MODEM_TEMPERATURE_SENSOR_3,
+                              g_strdup_printf ("%d", t3));
+
+    mmcli_output_dump ();
+
+    g_strfreev (items);
+    g_free (payload);
+    g_free (result);
 }
 
 void
@@ -661,7 +728,11 @@ command_ready (MMModem      *modem,
     GError *error = NULL;
 
     operation_result = mm_modem_command_finish (modem, result, &error);
-    command_process_reply (operation_result, error);
+    // command_process_reply (operation_result, error);
+    if (temperature_flag)
+        temperature_process_reply (operation_result, error);
+    else
+        command_process_reply (operation_result, error);
 
     mmcli_async_operation_done ();
 }
@@ -1072,6 +1143,7 @@ get_modem_ready (GObject      *source,
     }
 
     /* Request to send a command to the modem? */
+    setup_temperature_command ();
     if (command_str) {
         guint timeout;
 
@@ -1317,6 +1389,7 @@ mmcli_modem_run_synchronous (GDBusConnection *connection)
 
 
     /* Request to send a command to the modem? */
+    setup_temperature_command ();
     if (command_str) {
         gchar *result;
         guint timeout;
@@ -1331,7 +1404,12 @@ mmcli_modem_run_synchronous (GDBusConnection *connection)
                                         timeout,
                                         NULL,
                                         &error);
-        command_process_reply (result, error);
+        // command_process_reply (result, error);
+        if (temperature_flag)
+            temperature_process_reply (result, error);
+        else
+            command_process_reply (result, error);
+
         return;
     }
 

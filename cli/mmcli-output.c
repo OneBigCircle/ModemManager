@@ -276,6 +276,13 @@ static FieldInfo field_infos[] = {
     [MMC_F_MODEM_LIST_DBUS_PATH]              = { "modem-list",                                      "modems",                   MMC_S_UNKNOWN,                 },
     [MMC_F_SMS_LIST_DBUS_PATH]                = { "modem.messaging.sms",                             "sms messages",             MMC_S_UNKNOWN,                 },
     [MMC_F_CALL_LIST_DBUS_PATH]               = { "modem.voice.call",                                "calls",                    MMC_S_UNKNOWN,                 },
+    //[MMC_F_MODEM_TEMPERATURE_RESPONSE]        = { "modem.temperature.response",                      "response",                 MMC_S_MODEM_GENERAL            },
+    //[MMC_F_MODEM_TEMPERATURE_SENSOR_1]        = { "modem.temperature.sensor-1",                      "sensor 1",                 MMC_S_MODEM_GENERAL            },
+    //[MMC_F_MODEM_TEMPERATURE_SENSOR_2]        = { "modem.temperature.sensor-2",                      "sensor 2",                 MMC_S_MODEM_GENERAL            },
+    //[MMC_F_MODEM_TEMPERATURE_SENSOR_3]        = { "modem.temperature.sensor-3",                      "sensor 3",                 MMC_S_MODEM_GENERAL            },
+    [MMC_F_MODEM_TEMPERATURE_PMIC]            = { "modem.temperature.pmic",                          "pmic",                     MMC_S_MODEM_GENERAL            },
+    [MMC_F_MODEM_TEMPERATURE_XO]              = { "modem.temperature.xo",                            "xo",                       MMC_S_MODEM_GENERAL            },
+    [MMC_F_MODEM_TEMPERATURE_PA]              = { "modem.temperature.pa",                            "pa",                       MMC_S_MODEM_GENERAL            },
 };
 
 /******************************************************************************/
