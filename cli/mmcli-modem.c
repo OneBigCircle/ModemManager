@@ -34,7 +34,7 @@
 #include "mmcli-common.h"
 #include "mmcli-output.h"
 
-+#define QUECTEL_TEMP_COMMAND "AT+QTEMP"
+#define QUECTEL_TEMP_COMMAND "AT+QTEMP"
 
 /* Context */
 typedef struct {
