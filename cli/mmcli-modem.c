@@ -248,6 +248,28 @@ context_free (void)
     g_free (ctx);
 }
 
+static gboolean
+parse_temperature_item (const gchar *text,
+                        gint        *out_value)
+{
+    gchar  *endptr = NULL;
+    gint64  parsed;
+
+    g_return_val_if_fail (text != NULL, FALSE);
+    g_return_val_if_fail (out_value != NULL, FALSE);
+
+    errno = 0;
+    parsed = g_ascii_strtoll (text, &endptr, 10);
+
+    /* Must consume at least one digit, consume whole token, and be in gint range */
+    if (text == endptr || (endptr && *endptr != '\0') || errno == ERANGE ||
+        parsed < G_MININT || parsed > G_MAXINT)
+        return FALSE;
+
+    *out_value = (gint) parsed;
+    return TRUE;
+}
+
 static void
 temperature_process_reply (gchar *result,
                            const GError *error)
@@ -262,6 +284,8 @@ temperature_process_reply (gchar *result,
         exit (EXIT_FAILURE);
     }
 
+    g_strstrip (result);
+
     if (!g_str_has_prefix (result, "+QTEMP:")) {
         g_printerr ("error: unexpected temperature response: '%s'\n", result);
         g_free (result);
@@ -270,6 +294,13 @@ temperature_process_reply (gchar *result,
 
     payload = g_strdup (result + strlen ("+QTEMP:"));
     g_strstrip (payload);
+
+    /* Defensive: keep only first line, discard trailing CR/LF content like "OK" */
+    {
+        gchar *eol = strpbrk (payload, "\r\n");
+        if (eol)
+            *eol = '\0';
+    }
 
     items = g_strsplit (payload, ",", 3);
 
@@ -281,18 +312,23 @@ temperature_process_reply (gchar *result,
         exit (EXIT_FAILURE);
     }
 
-    t1 = atoi (g_strstrip (items[0]));
-    t2 = atoi (g_strstrip (items[1]));
-    t3 = atoi (g_strstrip (items[2]));
+    g_strstrip (items[0]);
+    g_strstrip (items[1]);
+    g_strstrip (items[2]);
 
-    mmcli_output_string_take (MMC_F_MODEM_TEMPERATURE_PMIC,
-                              g_strdup_printf ("%d", t1));
+    if (!parse_temperature_item (items[0], &t1) ||
+        !parse_temperature_item (items[1], &t2) ||
+        !parse_temperature_item (items[2], &t3)) {
+        g_printerr ("error: invalid temperature value(s) in response: '%s'\n", result);
+        g_strfreev (items);
+        g_free (payload);
+        g_free (result);
+        exit (EXIT_FAILURE);
+    }
 
-    mmcli_output_string_take (MMC_F_MODEM_TEMPERATURE_XO,
-                              g_strdup_printf ("%d", t2));
-
-    mmcli_output_string_take (MMC_F_MODEM_TEMPERATURE_PA,
-                              g_strdup_printf ("%d", t3));
+    mmcli_output_string_take (MMC_F_MODEM_TEMPERATURE_PMIC, g_strdup_printf ("%d", t1));
+    mmcli_output_string_take (MMC_F_MODEM_TEMPERATURE_XO,   g_strdup_printf ("%d", t2));
+    mmcli_output_string_take (MMC_F_MODEM_TEMPERATURE_PA,   g_strdup_printf ("%d", t3));
 
     mmcli_output_dump ();
 
