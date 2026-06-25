@@ -285,14 +285,6 @@ temperature_process_reply (gchar *result,
     t2 = atoi (g_strstrip (items[1]));
     t3 = atoi (g_strstrip (items[2]));
 
-    //mmcli_output_string (MMC_F_MODEM_TEMPERATURE_RESPONSE, result);
-    //mmcli_output_string_take (MMC_F_MODEM_TEMPERATURE_SENSOR_1,
-    //                          g_strdup_printf ("%d", t1));
-    //mmcli_output_string_take (MMC_F_MODEM_TEMPERATURE_SENSOR_2,
-    //                          g_strdup_printf ("%d", t2));
-    //mmcli_output_string_take (MMC_F_MODEM_TEMPERATURE_SENSOR_3,
-    //                          g_strdup_printf ("%d", t3));
-
     mmcli_output_string_take (MMC_F_MODEM_TEMPERATURE_PMIC,
                               g_strdup_printf ("%d", t1));
 
@@ -737,7 +729,7 @@ command_ready (MMModem      *modem,
     GError *error = NULL;
 
     operation_result = mm_modem_command_finish (modem, result, &error);
-    // command_process_reply (operation_result, error);
+
     if (temperature_flag)
         temperature_process_reply (operation_result, error);
     else
@@ -1413,7 +1405,7 @@ mmcli_modem_run_synchronous (GDBusConnection *connection)
                                         timeout,
                                         NULL,
                                         &error);
-        // command_process_reply (result, error);
+
         if (temperature_flag)
             temperature_process_reply (result, error);
         else
