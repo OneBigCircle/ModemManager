@@ -23,6 +23,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <locale.h>
+#include <errno.h>
+#include <string.h>
 
 #include <glib.h>
 #include <gio/gio.h>
@@ -33,6 +35,8 @@
 #include "mmcli.h"
 #include "mmcli-common.h"
 #include "mmcli-output.h"
+
+#define QUECTEL_TEMP_COMMAND "AT+QTEMP"
 
 /* Context */
 typedef struct {
@@ -65,6 +69,7 @@ static gchar *set_preferred_mode_str;
 static gchar *set_current_bands_str;
 static gint set_primary_sim_slot_int;
 static gboolean inhibit_flag;
+static gboolean temperature_flag;
 
 static GOptionEntry entries[] = {
     { "monitor-state", 'w', 0, G_OPTION_ARG_NONE, &monitor_state_flag,
@@ -135,6 +140,10 @@ static GOptionEntry entries[] = {
       "Inhibit the modem",
       NULL
     },
+    { "temperature", 0, 0, G_OPTION_ARG_NONE, &temperature_flag,
+      "Get the modem temperature, currently supported for Quectel modems only",
+      NULL
+    },
     { NULL }
 };
 
@@ -179,7 +188,8 @@ mmcli_modem_options_enabled (void)
                  !!set_preferred_mode_str +
                  !!set_current_bands_str +
                  (set_primary_sim_slot_int > 0) +
-                 inhibit_flag);
+                 inhibit_flag +
+                 temperature_flag);
 
     if (n_actions == 0 && mmcli_get_common_modem_string ()) {
         /* default to info */
@@ -211,6 +221,13 @@ mmcli_modem_options_enabled (void)
 }
 
 static void
+setup_temperature_command (void)
+{
+    if (temperature_flag && !command_str)
+        command_str = g_strdup (QUECTEL_TEMP_COMMAND);
+}
+
+static void
 context_free (void)
 {
     if (!ctx)
@@ -231,6 +248,95 @@ context_free (void)
     if (ctx->connection)
         g_object_unref (ctx->connection);
     g_free (ctx);
+}
+
+static gboolean
+parse_temperature_item (const gchar *text,
+                        gint        *out_value)
+{
+    gchar  *endptr = NULL;
+    gint64  parsed;
+
+    g_return_val_if_fail (text != NULL, FALSE);
+    g_return_val_if_fail (out_value != NULL, FALSE);
+
+    errno = 0;
+    parsed = g_ascii_strtoll (text, &endptr, 10);
+
+    /* Must consume at least one digit, consume whole token, and be in gint range */
+    if (text == endptr || (endptr && *endptr != '\0') || errno == ERANGE ||
+        parsed < G_MININT || parsed > G_MAXINT)
+        return FALSE;
+
+    *out_value = (gint) parsed;
+    return TRUE;
+}
+
+static void
+temperature_process_reply (gchar *result,
+                           const GError *error)
+{
+    gchar **items;
+    gchar *payload;
+    gint t1, t2, t3;
+
+    if (!result) {
+        g_printerr ("error: temperature query failed: '%s'\n",
+                    error ? error->message : "unknown error");
+        exit (EXIT_FAILURE);
+    }
+
+    g_strstrip (result);
+
+    if (!g_str_has_prefix (result, "+QTEMP:")) {
+        g_printerr ("error: unexpected temperature response: '%s'\n", result);
+        g_free (result);
+        exit (EXIT_FAILURE);
+    }
+
+    payload = g_strdup (result + strlen ("+QTEMP:"));
+    g_strstrip (payload);
+
+    /* Defensive: keep only first line, discard trailing CR/LF content like "OK" */
+    {
+        gchar *eol = strpbrk (payload, "\r\n");
+        if (eol)
+            *eol = '\0';
+    }
+
+    items = g_strsplit (payload, ",", 3);
+
+    if (!items[0] || !items[1] || !items[2]) {
+        g_printerr ("error: failed to parse temperature response: '%s'\n", result);
+        g_strfreev (items);
+        g_free (payload);
+        g_free (result);
+        exit (EXIT_FAILURE);
+    }
+
+    g_strstrip (items[0]);
+    g_strstrip (items[1]);
+    g_strstrip (items[2]);
+
+    if (!parse_temperature_item (items[0], &t1) ||
+        !parse_temperature_item (items[1], &t2) ||
+        !parse_temperature_item (items[2], &t3)) {
+        g_printerr ("error: invalid temperature value(s) in response: '%s'\n", result);
+        g_strfreev (items);
+        g_free (payload);
+        g_free (result);
+        exit (EXIT_FAILURE);
+    }
+
+    mmcli_output_string_take (MMC_F_MODEM_TEMPERATURE_PMIC, g_strdup_printf ("%d", t1));
+    mmcli_output_string_take (MMC_F_MODEM_TEMPERATURE_XO,   g_strdup_printf ("%d", t2));
+    mmcli_output_string_take (MMC_F_MODEM_TEMPERATURE_PA,   g_strdup_printf ("%d", t3));
+
+    mmcli_output_dump ();
+
+    g_strfreev (items);
+    g_free (payload);
+    g_free (result);
 }
 
 void
@@ -661,7 +767,11 @@ command_ready (MMModem      *modem,
     GError *error = NULL;
 
     operation_result = mm_modem_command_finish (modem, result, &error);
-    command_process_reply (operation_result, error);
+
+    if (temperature_flag)
+        temperature_process_reply (operation_result, error);
+    else
+        command_process_reply (operation_result, error);
 
     mmcli_async_operation_done ();
 }
@@ -1072,6 +1182,7 @@ get_modem_ready (GObject      *source,
     }
 
     /* Request to send a command to the modem? */
+    setup_temperature_command ();
     if (command_str) {
         guint timeout;
 
@@ -1317,6 +1428,7 @@ mmcli_modem_run_synchronous (GDBusConnection *connection)
 
 
     /* Request to send a command to the modem? */
+    setup_temperature_command ();
     if (command_str) {
         gchar *result;
         guint timeout;
@@ -1331,7 +1443,12 @@ mmcli_modem_run_synchronous (GDBusConnection *connection)
                                         timeout,
                                         NULL,
                                         &error);
-        command_process_reply (result, error);
+
+        if (temperature_flag)
+            temperature_process_reply (result, error);
+        else
+            command_process_reply (result, error);
+
         return;
     }
 
