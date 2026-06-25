@@ -835,7 +835,7 @@ handle_command_auth_ready (MMBaseModem *self,
     }
 
 #if ! defined WITH_AT_COMMAND_VIA_DBUS
-    /* If we are not in Debug mode, report an error */
+    /* If we are not in Debug mode, report an error (except for explicitly whitelisted commands) */
     if (!mm_context_get_debug () &&
         g_strcmp0 (ctx->cmd, "AT+QTEMP") != 0) {
         g_dbus_method_invocation_return_error (ctx->invocation,
